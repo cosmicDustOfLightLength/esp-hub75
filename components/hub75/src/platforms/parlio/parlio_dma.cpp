@@ -26,9 +26,54 @@
 #include <esp_heap_caps.h>
 #include <esp_cache.h>
 
+#if defined(CONFIG_IDF_TARGET_ESP32S31)
+// ESP32-S31: a software reset (esp_restart, panic, task WDT) does not stop the AXI-DMA channel
+// that feeds PARLIO in loop mode. IDF then resets the AXI-DMA group mid-transfer on the next boot,
+// which wedges the channel (parlio_tx_unit_transmit() spins forever waiting for tx_ready).
+// ESP32-P4 aborts AXI-DMA channels in esp_system_reset_modules_on_exit(); S31 does not (yet),
+// so do it here.
+#include <esp_system.h>
+#include <esp_rom_sys.h>
+#include <hal/axi_dma_ll.h>
+#include <hal/gdma_channel.h>
+#include <soc/hp_sys_clkrst_struct.h>
+#define HUB75_S31_AXI_DMA_WORKAROUND 1
+#endif
+
 static const char *const TAG = "ParlioDma";
 
 namespace hub75 {
+
+#if defined(HUB75_S31_AXI_DMA_WORKAROUND)
+// Abort any AXI-DMA TX channel still connected to PARLIO (left running by a previous boot or about
+// to be left running by a restart). Safe to call when the channels are idle.
+static void s31_abort_parlio_axi_dma(bool log) {
+  if (!HP_SYS_CLKRST.axi_pdma_ctrl0.reg_axi_pdma_sys_clk_en) {
+    return;  // AXI-DMA clock off: nothing can be running
+  }
+  axi_dma_dev_t *dev = AXI_DMA_LL_GET_HW(0);
+  for (uint32_t ch = 0; ch < GDMA_LL_AXI_PAIRS_PER_GROUP; ch++) {
+    if (dev->out[ch].conf.out_peri_sel.peri_out_sel_chn != SOC_GDMA_TRIG_PERIPH_PARLIO0) {
+      continue;
+    }
+    axi_dma_ll_tx_abort(dev, ch, true);
+    uint32_t wait_us = 0;
+    while (!axi_dma_ll_tx_is_reset_avail(dev, ch) && wait_us < 10000) {
+      esp_rom_delay_us(10);
+      wait_us += 10;
+    }
+    axi_dma_ll_tx_reset_channel(dev, ch);
+    axi_dma_ll_tx_abort(dev, ch, false);
+    axi_dma_ll_tx_connect_to_periph(dev, ch, 63);  // back to reset default (unconnected)
+    if (log) {
+      ESP_LOGW(TAG, "Stopped stale AXI-DMA channel %u left running by previous boot (%s after %u us)",
+               (unsigned) ch, wait_us < 10000 ? "idle" : "timeout", (unsigned) wait_us);
+    }
+  }
+}
+
+static void s31_shutdown_handler() { s31_abort_parlio_axi_dma(false); }
+#endif
 
 // HUB75 16-bit word layout for PARLIO peripheral
 // Bit layout: [CLK|ADDR(5-bit)|LAT|OE|--|--|R1|R2|G1|G2|B1|B2]
@@ -119,6 +164,15 @@ bool ParlioDma::init() {
     ESP_LOGE(TAG, "Row decoder mode is not supported on PARLIO backend yet");
     return false;
   }
+
+#if defined(HUB75_S31_AXI_DMA_WORKAROUND)
+  // Must run before parlio_new_tx_unit(): allocating the AXI-DMA channel resets the whole group.
+  s31_abort_parlio_axi_dma(true);
+  static bool shutdown_handler_registered = false;
+  if (!shutdown_handler_registered) {
+    shutdown_handler_registered = esp_register_shutdown_handler(s31_shutdown_handler) == ESP_OK;
+  }
+#endif
 
   // Calculate BCM timings first
   calculate_bcm_timings();

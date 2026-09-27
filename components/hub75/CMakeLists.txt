@@ -29,6 +29,9 @@ if(IDF_VERSION_MAJOR GREATER_EQUAL 6)
     if(IDF_TARGET STREQUAL "esp32p4" OR IDF_TARGET STREQUAL "esp32c6" OR IDF_TARGET STREQUAL "esp32s31")
         list(APPEND HUB75_REQUIRES esp_driver_parlio)
     endif()
+    if(IDF_TARGET STREQUAL "esp32s31")
+        list(APPEND HUB75_REQUIRES esp_hal_dma esp_system)
+    endif()
 endif()
 
 idf_component_register(
