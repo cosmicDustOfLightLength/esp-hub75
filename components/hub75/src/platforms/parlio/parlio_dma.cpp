@@ -103,7 +103,7 @@ ParlioDma::~ParlioDma() { ParlioDma::shutdown(); }
 
 bool ParlioDma::init() {
   ESP_LOGI(TAG, "Initializing PARLIO TX peripheral%s...",
-#ifdef SOC_PARLIO_TX_CLK_SUPPORT_GATING
+#if HUB75_PARLIO_CLK_GATING
            " with clock gating"
 #else
            ""
@@ -265,7 +265,7 @@ void ParlioDma::configure_parlio() {
       .sample_edge = config_.clk_phase_inverted ? PARLIO_SAMPLE_EDGE_NEG : PARLIO_SAMPLE_EDGE_POS,
       .bit_pack_order = PARLIO_BIT_PACK_ORDER_LSB,  // Explicit LSB to match ESP-IDF example
       .flags = {
-#ifdef SOC_PARLIO_TX_CLK_SUPPORT_GATING
+#if HUB75_PARLIO_CLK_GATING
           .clk_gate_en = 1,  // Clock gating enabled (MSB controls PCLK)
 #else
           .clk_gate_en = 0,  // Clock gating not supported on this chip
@@ -286,10 +286,10 @@ void ParlioDma::configure_parlio() {
   ESP_LOGI(TAG, "PARLIO TX unit created successfully");
   ESP_LOGI(TAG, "  Data width: 16 bits, Clock: %.2f MHz (requested %u MHz)", actual_clock_hz_ / 1000000.0f,
            (unsigned int) (requested_hz / 1000000));
-#ifdef SOC_PARLIO_TX_CLK_SUPPORT_GATING
+#if HUB75_PARLIO_CLK_GATING
   ESP_LOGI(TAG, "  Clock gating: ENABLED (MSB bit controls PCLK)");
 #else
-  ESP_LOGI(TAG, "  Clock gating: NOT SUPPORTED");
+  ESP_LOGI(TAG, "  Clock gating: DISABLED");
 #endif
   ESP_LOGI(TAG, "  Transaction queue depth: %zu", config.trans_queue_depth);
 }
@@ -554,7 +554,7 @@ void ParlioDma::initialize_buffer_internal(BitPlaneBuffer *buffers) {
       // Initialize pixel section (LAT on last pixel)
       for (size_t x = 0; x < bp.pixel_words; x++) {
         uint16_t word = 0;
-#ifdef SOC_PARLIO_TX_CLK_SUPPORT_GATING
+#if HUB75_PARLIO_CLK_GATING
         word |= (1 << CLK_GATE_BIT);  // MSB=1: enable clock during pixel shift (clock gating)
 #endif
         word |= (row_addr << ADDR_SHIFT);  // Row address
@@ -590,7 +590,7 @@ void ParlioDma::initialize_blank_buffers() {
   }
 
   ESP_LOGI(TAG, "Initializing blank DMA buffers%s...",
-#ifdef SOC_PARLIO_TX_CLK_SUPPORT_GATING
+#if HUB75_PARLIO_CLK_GATING
            " with clock gating"
 #else
            ""
@@ -605,7 +605,7 @@ void ParlioDma::initialize_blank_buffers() {
   }
 
   ESP_LOGI(TAG, "Blank buffers initialized%s",
-#ifdef SOC_PARLIO_TX_CLK_SUPPORT_GATING
+#if HUB75_PARLIO_CLK_GATING
            " (clock gating via MSB)"
 #else
            ""
@@ -775,7 +775,8 @@ void ParlioDma::set_brightness_oe() {
 void ParlioDma::flush_cache_to_dma(int buffer_idx) {
 #if SOC_CACHE_WRITEBACK_SUPPORTED
   // P4 internal SRAM is cached too; both memory choices need synchronization.
-  if (!dma_buffers_[buffer_idx]) {
+  // On other chips (e.g. ESP32-S31) internal SRAM is not behind the cache, so skip it there.
+  if (!dma_buffers_[buffer_idx] || esp_cache_get_line_size_by_addr(dma_buffers_[buffer_idx]) == 0) {
     return;
   }
   esp_err_t err = esp_cache_msync(dma_buffers_[buffer_idx], total_buffer_bytes_,

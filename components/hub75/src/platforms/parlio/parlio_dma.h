@@ -15,6 +15,23 @@
 #include "../platform_dma.h"
 #include <cstddef>
 #include <driver/parlio_tx.h>
+#include <sdkconfig.h>
+#include <soc/soc_caps.h>
+
+// Use the PARLIO MSB data line to gate PCLK (embeds BCM timing in the buffer).
+// Enabled on chips that support it unless turned off via Kconfig
+// (CONFIG_HUB75_PARLIO_CLK_GATING) or -DHUB75_PARLIO_CLK_GATING=0.
+#ifndef HUB75_PARLIO_CLK_GATING
+#if defined(SOC_PARLIO_TX_CLK_SUPPORT_GATING) && \
+    (defined(CONFIG_HUB75_PARLIO_CLK_GATING) || !defined(CONFIG_HUB75_KCONFIG_PRESENT))
+#define HUB75_PARLIO_CLK_GATING 1
+#else
+#define HUB75_PARLIO_CLK_GATING 0
+#endif
+#endif
+#if HUB75_PARLIO_CLK_GATING && !defined(SOC_PARLIO_TX_CLK_SUPPORT_GATING)
+#error "HUB75_PARLIO_CLK_GATING=1 requires a chip with PARLIO TX clock gating"
+#endif
 
 namespace hub75 {
 
