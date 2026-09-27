@@ -769,13 +769,13 @@ menu "HUB75 RGB LED Matrix Driver"
 
         config HUB75_EXTERNAL_FRAMEBUFFERS
             bool "Use External Framebuffers"
-            depends on IDF_TARGET_ESP32S3 || IDF_TARGET_ESP32P4
+            depends on IDF_TARGET_ESP32S3 || IDF_TARGET_ESP32P4 || IDF_TARGET_ESP32S31
             depends on SPIRAM
-            default y if IDF_TARGET_ESP32P4
+            default y if IDF_TARGET_ESP32P4 || IDF_TARGET_ESP32S31
             default n
             help
                 Allocates DMA framebuffers in PSRAM instead of internal RAM.
-                Supported on ESP32-S3 and ESP32-P4. DMA descriptors remain
+                Supported on ESP32-S3, ESP32-P4 and ESP32-S31. DMA descriptors remain
                 in internal RAM. ESP32 and ESP32-S2 use internal buffers only.
 
                 Enable PSRAM initialization and heap allocation in the ESP-IDF

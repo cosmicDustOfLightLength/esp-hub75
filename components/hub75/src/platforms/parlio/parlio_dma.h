@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 //
 // @file parlio_dma.h
-// @brief PARLIO peripheral implementation for HUB75 (ESP32-P4/C6)
+// @brief PARLIO peripheral implementation for HUB75 (ESP32-P4/S31/C6)
 //
 // Uses PARLIO TX peripheral with optional clock gating (P4 only) to
 // embed BCM timing directly in buffer data via MSB bit control.
@@ -19,7 +19,7 @@
 namespace hub75 {
 
 /**
- * @brief PARLIO TX implementation for HUB75 (ESP32-P4/C6)
+ * @brief PARLIO TX implementation for HUB75 (ESP32-P4/S31/C6)
  *
  * On chips with clock gating support (ESP32-P4), MSB bit controls PCLK:
  * - MSB=1: Clock enabled, data shifts to panel

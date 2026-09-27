@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 //
 // @file parlio_dma.cpp
-// @brief PARLIO implementation for HUB75 (ESP32-P4/C6)
+// @brief PARLIO implementation for HUB75 (ESP32-P4/S31/C6)
 //
 // Uses PARLIO TX peripheral with optional clock gating (MSB bit controls PCLK on P4)
 // to embed BCM timing directly in buffer data, eliminating descriptor repetition.
@@ -295,7 +295,7 @@ void ParlioDma::configure_parlio() {
 }
 
 HUB75_CONST uint32_t ParlioDma::resolve_actual_clock_speed(Hub75ClockSpeed clock_speed) const {
-  // ESP32-P4/C6 PARLIO clock derivation:
+  // ESP32-P4/S31/C6 PARLIO clock derivation:
   //   Output = PLL_F160M / divider
   //   Constraint: divider >= 2
   //
