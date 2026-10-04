@@ -1168,8 +1168,8 @@ void ParlioDma::setup_buffer_switch_sync() {
     switch_cb_registered_ = true;
     ESP_LOGI(TAG, "Buffer switch sync: on_buffer_switched (frame %u us)", (unsigned) frame_time_us_);
   } else {
-    ESP_LOGW(TAG, "Buffer switch sync: on_buffer_switched not available (%s), using %u us delay",
-             esp_err_to_name(err), (unsigned) frame_time_us_);
+    ESP_LOGW(TAG, "Buffer switch sync: on_buffer_switched not available (%s), using %u us delay", esp_err_to_name(err),
+             (unsigned) frame_time_us_);
   }
 }
 
