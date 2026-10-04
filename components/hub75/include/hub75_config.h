@@ -102,7 +102,7 @@ extern "C" {
 #endif
 #if HUB75_EXTERNAL_FRAMEBUFFERS
 #if !defined(CONFIG_IDF_TARGET_ESP32S3) && !defined(CONFIG_IDF_TARGET_ESP32P4) && !defined(CONFIG_IDF_TARGET_ESP32S31)
-#error "External HUB75 framebuffers require ESP32-S3, ESP32-P4 or ESP32-S31; ESP32 and ESP32-S2 I2S DMA uses internal RAM"
+#error "External HUB75 framebuffers require ESP32-S3, -P4 or -S31; ESP32 and ESP32-S2 I2S DMA uses internal RAM"
 #endif
 #ifndef CONFIG_SPIRAM
 #error "External HUB75 framebuffers require PSRAM support (CONFIG_SPIRAM)"

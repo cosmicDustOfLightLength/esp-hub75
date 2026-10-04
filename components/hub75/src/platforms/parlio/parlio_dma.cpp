@@ -829,10 +829,16 @@ void ParlioDma::set_brightness_oe() {
 void ParlioDma::flush_cache_to_dma(int buffer_idx) {
 #if SOC_CACHE_WRITEBACK_SUPPORTED
   // P4 internal SRAM is cached too; both memory choices need synchronization.
-  // On other chips (e.g. ESP32-S31) internal SRAM is not behind the cache, so skip it there.
-  if (!dma_buffers_[buffer_idx] || esp_cache_get_line_size_by_addr(dma_buffers_[buffer_idx]) == 0) {
+  if (!dma_buffers_[buffer_idx]) {
     return;
   }
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(6, 0, 0)
+  // On other chips (e.g. ESP32-S31) internal SRAM is not behind the cache, so skip it there.
+  // esp_cache_get_line_size_by_addr() exists since ESP-IDF 6.0; S31 needs 6.1+ anyway.
+  if (esp_cache_get_line_size_by_addr(dma_buffers_[buffer_idx]) == 0) {
+    return;
+  }
+#endif
   esp_err_t err = esp_cache_msync(dma_buffers_[buffer_idx], total_buffer_bytes_,
                                   ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
   if (err != ESP_OK) {
