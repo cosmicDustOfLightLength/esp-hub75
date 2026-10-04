@@ -66,8 +66,8 @@ static void s31_abort_parlio_axi_dma(bool log) {
     axi_dma_ll_tx_abort(dev, ch, false);
     axi_dma_ll_tx_connect_to_periph(dev, ch, 63);  // back to reset default (unconnected)
     if (log) {
-      ESP_LOGW(TAG, "Stopped stale AXI-DMA channel %u left running by previous boot (%s after %u us)",
-               (unsigned) ch, wait_us < 10000 ? "idle" : "timeout", (unsigned) wait_us);
+      ESP_LOGW(TAG, "Stopped stale AXI-DMA channel %u left running by previous boot (%s after %u us)", (unsigned) ch,
+               wait_us < 10000 ? "idle" : "timeout", (unsigned) wait_us);
     }
   }
 }
