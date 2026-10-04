@@ -15,6 +15,8 @@
 #include "../platform_dma.h"
 #include <cstddef>
 #include <driver/parlio_tx.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 #include <sdkconfig.h>
 #include <soc/soc_caps.h>
 
@@ -87,6 +89,7 @@ class ParlioDma : public PlatformDma {
   void set_brightness_oe();
   void set_brightness_oe_internal(BitPlaneBuffer *buffers, uint8_t brightness);  // Helper: set OE for one buffer
   void flush_cache_to_dma(int buffer_idx);
+  void setup_buffer_switch_sync();  // Register on_buffer_switched callback (double buffering)
   bool build_transaction_queue();
   void calculate_bcm_timings();
   size_t calculate_bcm_padding(uint8_t bit_plane);
@@ -129,6 +132,13 @@ class ParlioDma : public PlatformDma {
   int front_idx_;            // DMA displays buffers[front_idx_]
   int active_idx_;           // CPU draws to buffers[active_idx_]
   bool is_double_buffered_;  // True if dma_buffers_[1] successfully allocated
+
+  // Buffer switch synchronization: in loop transmission, parlio_tx_unit_transmit() only
+  // queues the new buffer - hardware keeps scanning the old one until the current round
+  // ends. flip_buffer() must wait for that before the CPU draws into the old buffer.
+  SemaphoreHandle_t buffer_switched_sem_ = nullptr;
+  bool switch_cb_registered_ = false;
+  uint32_t frame_time_us_ = 0;  // one full buffer round, fallback wait if no callback
 
   size_t total_buffer_bytes_ = 0;  // Cached total buffer size per buffer (computed once, never changes)
   uint8_t basis_brightness_;

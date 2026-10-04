@@ -25,6 +25,7 @@
 #include <driver/gpio.h>
 #include <esp_heap_caps.h>
 #include <esp_cache.h>
+#include <esp_attr.h>
 
 #if defined(CONFIG_IDF_TARGET_ESP32S31)
 // ESP32-S31: a software reset (esp_restart, panic, task WDT) does not stop the AXI-DMA channel
@@ -244,6 +245,12 @@ void ParlioDma::shutdown() {
     parlio_del_tx_unit(tx_unit_);
     tx_unit_ = nullptr;
   }
+
+  if (buffer_switched_sem_) {
+    vSemaphoreDelete(buffer_switched_sem_);
+    buffer_switched_sem_ = nullptr;
+  }
+  switch_cb_registered_ = false;
 
   // Free all allocated resources (using array structure)
   for (int i = 0; i < 2; i++) {
@@ -562,6 +569,9 @@ bool ParlioDma::allocate_row_buffers() {
 
   // Set double buffer flag based on actual allocation result
   is_double_buffered_ = (dma_buffers_[1] != nullptr);
+  if (is_double_buffered_) {
+    setup_buffer_switch_sync();
+  }
 
   ESP_LOGI(TAG, "Successfully allocated row buffers");
   return true;
@@ -1130,6 +1140,39 @@ HUB75_IRAM void ParlioDma::fill(uint16_t x, uint16_t y, uint16_t w, uint16_t h, 
   }
 }
 
+// ISR context (GDMA). user_ctx = semaphore handle (internal RAM, cache-safe).
+static bool IRAM_ATTR parlio_buffer_switched_cb(parlio_tx_unit_handle_t, const parlio_tx_buffer_switched_event_data_t *,
+                                                void *user_ctx) {
+  BaseType_t woken = pdFALSE;
+  xSemaphoreGiveFromISR(static_cast<SemaphoreHandle_t>(user_ctx), &woken);
+  return woken == pdTRUE;
+}
+
+void ParlioDma::setup_buffer_switch_sync() {
+  // Duration of one full buffer round: 16-bit words clocked out at actual_clock_hz_
+  frame_time_us_ = (uint32_t) (((uint64_t) (total_buffer_bytes_ / 2) * 1000000ULL) / actual_clock_hz_);
+
+  if (!tx_unit_ || buffer_switched_sem_) {
+    return;
+  }
+  buffer_switched_sem_ = xSemaphoreCreateBinary();
+  if (!buffer_switched_sem_) {
+    ESP_LOGW(TAG, "Buffer switch sync: semaphore alloc failed, using %u us delay", (unsigned) frame_time_us_);
+    return;
+  }
+
+  parlio_tx_event_callbacks_t cbs = {};
+  cbs.on_buffer_switched = parlio_buffer_switched_cb;
+  esp_err_t err = parlio_tx_unit_register_event_callbacks(tx_unit_, &cbs, buffer_switched_sem_);
+  if (err == ESP_OK) {
+    switch_cb_registered_ = true;
+    ESP_LOGI(TAG, "Buffer switch sync: on_buffer_switched (frame %u us)", (unsigned) frame_time_us_);
+  } else {
+    ESP_LOGW(TAG, "Buffer switch sync: on_buffer_switched not available (%s), using %u us delay",
+             esp_err_to_name(err), (unsigned) frame_time_us_);
+  }
+}
+
 void ParlioDma::flip_buffer() {
   // Single buffer mode: no-op (both indices point to buffer 0)
   if (!row_buffers_[1] || !dma_buffers_[1]) {
@@ -1140,14 +1183,31 @@ void ParlioDma::flip_buffer() {
   // Only needed in double buffer mode (draw/clear skip flush, defer to here)
   flush_cache_to_dma(active_idx_);
 
-  // Swap indices (front ↔ active)
+  // Swap indices (front <-> active)
   std::swap(front_idx_, active_idx_);
 
-  // Queue new front buffer (hardware switches seamlessly after current frame)
+  if (switch_cb_registered_) {
+    xSemaphoreTake(buffer_switched_sem_, 0);  // drop a stale signal
+  }
+
+  // Queue new front buffer (hardware switches after the current round finishes)
   size_t total_bits = total_buffer_bytes_ * 8;
   esp_err_t err = parlio_tx_unit_transmit(tx_unit_, dma_buffers_[front_idx_], total_bits, &transmit_config_);
   if (err != ESP_OK) {
     ESP_LOGW(TAG, "flip_buffer: Failed to queue buffer: %s", esp_err_to_name(err));
+    return;
+  }
+
+  // Wait until hardware really scans the new front buffer. Until then it still reads
+  // the old one (now active_idx_) - drawing into it would tear / show black stripes.
+  const uint32_t frame_ms = frame_time_us_ / 1000 + 1;
+  if (switch_cb_registered_) {
+    // worst case: one full round + margin
+    if (xSemaphoreTake(buffer_switched_sem_, pdMS_TO_TICKS(2 * frame_ms + 10)) != pdTRUE) {
+      ESP_LOGW(TAG, "flip_buffer: buffer switch not confirmed (timeout)");
+    }
+  } else if (frame_time_us_ > 0) {
+    vTaskDelay(pdMS_TO_TICKS(frame_ms) + 1);  // fallback: wait one full round
   }
 }
 
